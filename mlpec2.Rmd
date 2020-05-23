@@ -10,6 +10,9 @@ output:
     toc: yes
 params:
   data_file: peptidos.csv
+  training_split: 67
+  seed.split: 123
+  seed.clsfier: 1234567
 ---
 
 ```{r setup, include=FALSE}
@@ -19,6 +22,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r include = FALSE}
 if(!(require(ggseqlogo)))
   install.packages("ggseqlogo")
+if(!(require(caret)))
+  install.packages("caret")
+if(!(require(e1071)))
+  install.packages("e1071")
+if(!(require(neuralnet)))
+  install.packages("NeuralNetTools)")
+if(!(require(NeuralNetTools)))
+  install.packages("NeuralNetTools")
 if(!(require(kernlab)))
   install.packages("kernlab")
 if(!(require(class)))
@@ -36,9 +47,18 @@ if(!(require(e1071)))
 ***  
 **Parámetros:**  
 **data_file**: *ruta completa al archivo de péptidos*  
+**training_splt**: *porcentaje a dedicar al conjunto de training [0,100]*
 *** 
 
-#
+# Algoritmo Red Neuronal Artificial
+
+El algoritmo de Red Neuronal Artificial con retropropagación está inspirado en el funcionamiento de las redes neuronales biológicas, pero con un menor número de neuronas y capas. Funciona iterando repetidamente dos procesos. En uno se obtiene una salida y en otro se propaga el error de esa salida hacia atrás para corregir los pesos de de cada neurona, mediante la técnica de gradiente descendente.
+
+Fortalezas | Debilidades
+-----|------
+Se puede adaptar a problemas de clasificación o predicción numéricos  | Muy costosa computacionalmente y lenta durante el aprendizaje, especialmente si la topología de la red es compleja.  
+Capaz de modelizar estructuras más complejas que la mayoría de algoritmos | Es fácil caer en problemas de overfitting con esta técnica.  
+Hace pocas presunciones sobre las relaciones internas de los datos | El resultado en un modelo de caja negra que es muy difícil, si no imposible, de interpretar. 
 
 # Algoritmo Support Vector Machine
 
@@ -82,5 +102,41 @@ oh_data <- data.frame(t(data.frame(lapply(peptidos$sequence, one_hot))))
 rownames(oh_data) <- peptidos$sequence  
 ```
 
+# Clasificador de red neuronal artificial
 
+Creamos variables binarias en lugar de usar la variable factor `label`.   
+```{r}
+oh_data$SB <- as.integer(peptidos$label=="SB")
+oh_data$NB <- as.integer(peptidos$label=="NB")
+n <- nrow(oh_data)
+```
+Ahora creamos los conjuntos entrenamiento y de prueba. Se realiza una extracción de los datos *aleatoriamente* de `r params$training_split`% de todas las observaciones, `r floor(params$training_split*n/100)`, para entrenar al modelo (training) y del resto `r n - floor(params$training_split*n/100)` para evaluarlo (test).
+```{r}
+set.seed(params$seed.split)
+smp_size <-  floor(n * params$training_split/100)
+train_ind <- sample(seq_len(n), size = smp_size)
+data_train <- oh_data[train_ind,]
+data_test <- oh_data[-train_ind,]
+```
 
+```{r}
+set.seed(params$seed.clsfier)
+xnam <- names(oh_data[1:180])
+fmla <- as.formula(paste("SB+NB ~ ", paste(xnam, collapse= "+")))
+
+data_model_1 <- neuralnet(fmla,
+                          data = data_train,
+                          hidden=1,linear.output=FALSE)
+plot(data_model_1, rep='best')
+model_results_1 <- compute(data_model_1, data_test[,1:180])$net.result
+
+maxidx <- function(arr) {
+  return(which(arr == max(arr)))
+}
+
+idx <- apply(model_results_1, 1, maxidx)
+prediction <- c('SB', 'NB')[idx]
+res <- table(prediction, peptidos$label[-train_ind] )
+
+(cmatrix1 <- confusionMatrix(res,positive="SB"))
+```
