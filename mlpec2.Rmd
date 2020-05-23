@@ -1,0 +1,86 @@
+---
+title: "PEC2- ML"
+author: "Pío Alberto Sierra Rodríguez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  pdf_document:
+    toc: yes
+params:
+  data_file: peptidos.csv
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+if(!(require(ggseqlogo)))
+  install.packages("ggseqlogo")
+if(!(require(kernlab)))
+  install.packages("kernlab")
+if(!(require(class)))
+  install.packages("class")
+if(!(require(gmodels)))
+  install.packages("gmodels")
+if(!(require(ROCR)))
+  install.packages("ROCR")
+if(!(require(caret)))
+  install.packages("caret")
+if(!(require(e1071)))
+  install.packages("e1071")
+```
+
+***  
+**Parámetros:**  
+**data_file**: *ruta completa al archivo de péptidos*  
+*** 
+
+#
+
+# Algoritmo Support Vector Machine
+
+El algoritmo SVN consiste en la creacción de hiperplanos en el espacio definido por los valores de las características que creen particiones en las que clasificar los datos.  
+
+Ventajas| Inconvenientes
+-----|------
+Pueden ser usados tanto para clasificación como para predicción numérica | Encontrar el mejor modelo exige probar con distintos kernels y parámetros.  
+No se ve muy afectado por ruido en los datos ni es susceptible de sobreajuste. | El entrenamiento puede ser lento, sobre todo cuando se trata de datos con un gran número de características u observaciones.  
+Puede resultar más sencillo de utilizar que las redes neuronales, debido a la existencia de varios algoritmos de SVN bien mantenidos. | El resultado es un complejo modelo de caja negra que resulta a menudo imposible de interpretar.  
+Es bastante popular debido a su precisión y al haber resultado vencedor en varias competiciones de data mining. | -  
+
+El algoritmo consiste en identificar los Support Vectors, las observaciones de cada clase que están más cerca del Hyperplano de margen máximo (MMH). Se demuestra que estos puntos bastan para definir el hiperplano. Para el caso de datos que no son linealmente separables, se utiliza una variable slack que define un margen al otro lado del hiperplano al que es aceptable tener alguna observación.  
+
+Otra ventaja de SVN es la posiblidad de añadir más dimensiones a las observaciones para así hacer visibles (lineales) relaciones entre las observaciones.  
+
+# Lectura de datos
+
+```{r}
+peptidos <- read.csv2(params$data_file)
+table(peptidos$label)
+ggseqlogo(peptidos[which(peptidos$label=="SB"),]$sequence)
+ggseqlogo(peptidos[which(peptidos$label=="NB"),]$sequence)
+```
+
+Tenemos un `r 100*sum(peptidos$label=="SB")/length(peptidos$label)`% de peptidos con interacción.  
+
+Podemos observar que los péptidos que tienen interacción presentan una mayor frecuencia muy marcada de aminoácidos hidrófobos en la segunda y última posición de la cadena.  
+
+# Codificación "one-hot"
+
+```{r}
+aminoacidos <-c('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L',
+                'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y')
+one_hot <- function(data) {
+    unlist(lapply(strsplit(data, split="")[[1]], 
+                  function(x) {as.integer(aminoacidos == x)}), 
+           recursive = FALSE)
+}
+oh_data <- data.frame(t(data.frame(lapply(peptidos$sequence, one_hot))))
+rownames(oh_data) <- peptidos$sequence  
+```
+
+
+
