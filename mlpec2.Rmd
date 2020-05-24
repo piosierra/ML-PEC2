@@ -3,10 +3,10 @@ title: "PEC2- ML"
 author: "Pío Alberto Sierra Rodríguez"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
+  pdf_document:
+    toc: yes
   html_document:
     df_print: paged
-    toc: yes
-  pdf_document:
     toc: yes
 params:
   data_file: peptidos.csv
@@ -38,12 +38,8 @@ if(!(require(gmodels)))
   install.packages("gmodels")
 if(!(require(ROCR)))
   install.packages("ROCR")
-if(!(require(caret)))
-  install.packages("caret")
 if(!(require(e1071)))
   install.packages("e1071")
-if(!(require(RSNNS)))
-  install.packages("RSNNS")
 ```
 
 ***  
@@ -170,23 +166,23 @@ El modelo de tres capas con categoria positiva 'SB' obtiene una precisión de `r
 
 ```{r}
 
-mlp3 <- mlp(data_train[,1:180], data_train[,181:182], size=3, learnFuncParams=c(0.1), 
-              maxit=50, inputsTest=data_test[,1:180], targetsTest=data_test[,181:182])
-model_results <- predict(mlp3,data_test[,1:180])
-idx <- apply(model_results, 1, maxidx)
-prediction <- c('SB', 'NB')[idx]
-res <- table(prediction, peptidos$label[-train_ind])
-(cmatrix <- caret::confusionMatrix(res,positive="SB"))
+# mlp3 <- mlp(data_train[,1:180], data_train[,181:182], size=3, learnFuncParams=c(0.1), 
+#               maxit=50, inputsTest=data_test[,1:180], targetsTest=data_test[,181:182])
+# model_results <- predict(mlp3,data_test[,1:180])
+# idx <- apply(model_results, 1, maxidx)
+# prediction <- c('SB', 'NB')[idx]
+# res <- table(prediction, peptidos$label[-train_ind])
+# (cmatrix <- caret::confusionMatrix(res,positive="SB"))
 ```
 ```{r}
-# model <- train(data_train[,1:180], as.factor(peptidos$label[train_ind]), method='mlp', 
-#                trControl= trainControl(method='cv', number=5), 
-#                tuneGrid= NULL, tuneLength=10 ,trace = FALSE)
-# 
-# plotnet(model, alpha=0.6)
-# summary(model)
-# prediction <- predict(model, test.set[-10])                           # predict
-# table(prediction, test.set$Class)  
+set.seed(params$seed.clsfier)
+data.frame(.size=3)
+model <- caret::train(data_train[,1:180], as.factor(peptidos$label[train_ind]), method='mlpWeightDecay', 
+               trControl= trainControl(method='cv', number=5), 
+               tuneGrid= data.frame(.size=3), tuneLength=10 ,trace = FALSE)
+prediction <- predict(model, data_test) 
+res <- table(prediction, peptidos$label[-train_ind] )
+(cmatrix <- caret::confusionMatrix(res,positive="SB"))
 ```
 
 # Clasificador de SVN
@@ -225,3 +221,19 @@ modGauss_pred <- predict(modeloGauss, data_test)
 res <- table(modGauss_pred, data_test$label)
 (cmatrix1 <- caret::confusionMatrix(res, positive="SB"))
 ```
+
+```{r}
+# svmGrid <- expand.grid(sigma= 2^c(-25, -20, -15,-10, -5, 0), C= 2^c(0:5))
+svmGrid <- expand.grid(sigma= 2^c(-10), C= 2^c(0))
+set.seed(params$seed.clsfier)
+model <- caret::train(label~., data= data_train, method='svmRadial', 
+               trControl= trainControl(method='cv', number=5, classProbs = TRUE), 
+                tuneGrid= svmGrid, metric = "Accuracy",trace = FALSE)
+model
+prediction <- predict(model, data_test)                           # predict
+res <- table(prediction, data_test$label)                             # compare
+
+caret::confusionMatrix(res, positive="SB")  
+
+```
+
