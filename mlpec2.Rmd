@@ -13,6 +13,7 @@ params:
   training_split: 67
   seed.split: 123
   seed.clsfier: 1234567
+  transformed_file: peptidos_transf_one_hot.csv
 ---
 
 ```{r setup, include=FALSE}
@@ -45,8 +46,10 @@ if(!(require(e1071)))
 ***  
 **Parámetros:**  
 **data_file**: *ruta completa al archivo de péptidos*  
-**training_splt**: *porcentaje a dedicar al conjunto de training [0,100]*
-**transformed_file**: *archivo en el que almacenar lod datos transformados con la codificación one-hot.*
+**training_splt**: *porcentaje a dedicar al conjunto de training [0,100]*  
+**seed.split**: *semilla para la división de los datos en conjunto y entrenamiento.*  
+**seed.clsfier**: *semilla para la ejecución de cada modelo.*  
+**transformed_file**: *archivo en el que almacenar lod datos transformados con la codificación one-hot.*  
 *** 
 
 # 1- Algoritmos utilizados
@@ -111,7 +114,7 @@ oh_data <- data.frame(t(data.frame(lapply(peptidos$sequence, one_hot))))
 Comprobamos que la transformación deja correctamente `r nchar(peptidos[1,1])` unos en cada fila. Y guardamos los datos.
 ```{r}
 summary(apply(oh_data,1,sum))
-write.csv2(oh_data, params$transformed_file)
+write.table(oh_data, params$transformed_file, row.names = FALSE, sep = ";")
 # rownames(oh_data) <- peptidos$sequence  
 ```
 
@@ -293,3 +296,15 @@ caret::confusionMatrix(res, positive="SB")
 
 ```
 El modelo `mlp` de tres capas con categoria positiva 'SB' usando 5-fold crossvalidation obtiene una precisión de `r round(cmatrix_mlp$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix_mlp$byClass["Sensitivity"], 3)` y `r round(cmatrix_mlp$byClass["Specificity"], 3)` respectivamente.  
+
+## 7 - Comentario sobre los resultados.
+
+Los resultados son bastante similares entre sí. Está claro que es bastante fácil conseguir una precisión alta en este caso. Me ha parecido muy interesante el sistema de validación automática de varios parámetros que he utilizado en el último caso.
+Sin embargo consume mucho tiempo el probar varias combinaciones. Quise probar a hacerlo con el paquete `rpud`, pero por desgracia aún no está disponible para R 4.0.0.  
+http://www.r-tutor.com/gpu-computing/rpud-installation
+
+De forma genérica diría que para este caso se pueden obtener buenos resultados con los dos tipos de algoritmos, aunque por el tipo de problema yo me decantaría por SVN para explorar posibles optimizaciones.
+
+
+
+
