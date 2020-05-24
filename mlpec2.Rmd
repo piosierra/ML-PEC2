@@ -42,6 +42,8 @@ if(!(require(caret)))
   install.packages("caret")
 if(!(require(e1071)))
   install.packages("e1071")
+if(!(require(RSNNS)))
+  install.packages("RSNNS")
 ```
 
 ***  
@@ -104,12 +106,15 @@ rownames(oh_data) <- peptidos$sequence
 
 # Clasificador de red neuronal artificial
 
+## Preparación de datos  
+
 Creamos variables binarias en lugar de usar la variable factor `label`.   
 ```{r}
 oh_data$SB <- as.integer(peptidos$label=="SB")
 oh_data$NB <- as.integer(peptidos$label=="NB")
 n <- nrow(oh_data)
 ```
+
 Ahora creamos los conjuntos entrenamiento y de prueba. Se realiza una extracción de los datos *aleatoriamente* de `r params$training_split`% de todas las observaciones, `r floor(params$training_split*n/100)`, para entrenar al modelo (training) y del resto `r n - floor(params$training_split*n/100)` para evaluarlo (test).
 ```{r}
 set.seed(params$seed.split)
@@ -119,24 +124,104 @@ data_train <- oh_data[train_ind,]
 data_test <- oh_data[-train_ind,]
 ```
 
+## Entrenamiendo de modelo de 1 nodo y de modelo de 3 nodos
+
 ```{r}
-set.seed(params$seed.clsfier)
 xnam <- names(oh_data[1:180])
 fmla <- as.formula(paste("SB+NB ~ ", paste(xnam, collapse= "+")))
-
+set.seed(params$seed.clsfier)
 data_model_1 <- neuralnet(fmla,
                           data = data_train,
                           hidden=1,linear.output=FALSE)
+set.seed(params$seed.clsfier)
+data_model_3 <- neuralnet(fmla,
+                          data = data_train,
+                          hidden=3,linear.output=FALSE)
 plot(data_model_1, rep='best')
+plot(data_model_3, rep='best')
+
+```
+
+Obtenemos las predicciones y convertimos la salida numérica binaria (probabilidades) en una categórica para comparar los resultados.
+
+```{r}
+
 model_results_1 <- compute(data_model_1, data_test[,1:180])$net.result
+model_results_3 <- compute(data_model_3, data_test[,1:180])$net.result
 
 maxidx <- function(arr) {
   return(which(arr == max(arr)))
 }
 
-idx <- apply(model_results_1, 1, maxidx)
-prediction <- c('SB', 'NB')[idx]
-res <- table(prediction, peptidos$label[-train_ind] )
+idx1 <- apply(model_results_1, 1, maxidx)
+idx3 <- apply(model_results_3, 1, maxidx)
+prediction1 <- c('SB', 'NB')[idx1]
+prediction3 <- c('SB', 'NB')[idx3]
+res1 <- table(prediction1, peptidos$label[-train_ind] )
+res3 <- table(prediction3, peptidos$label[-train_ind] )
 
-(cmatrix1 <- confusionMatrix(res,positive="SB"))
+(cmatrix1 <- caret::confusionMatrix(res1,positive="SB"))
+(cmatrix3 <- caret::confusionMatrix(res3,positive="SB"))
+```
+
+El modelo de una capa con categoria positiva 'SB' obtiene una precisión de `r round(cmatrix1$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix1$byClass["Sensitivity"], 3)` y `r round(cmatrix1$byClass["Specificity"], 3)` respectivamente.  
+El modelo de tres capas con categoria positiva 'SB' obtiene una precisión de `r round(cmatrix3$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix3$byClass["Sensitivity"], 3)` y `r round(cmatrix3$byClass["Specificity"], 3)` respectivamente.  
+`r if(cmatrix1$overall["Accuracy"] > cmatrix3$overall["Accuracy"]){"Vemos que el modelo obtenido con un solo nodo tiene una mayor precisión"}``r if(cmatrix1$overall["Accuracy"] < cmatrix3$overall["Accuracy"]){"Vemos que el modelo obtenido con tres nodos tiene una mayor precisión"}``r if(cmatrix1$overall["Accuracy"] == cmatrix3$overall["Accuracy"]){"Vemos que ambos modelos tienen la misma precisión"}`
+
+```{r}
+
+mlp3 <- mlp(data_train[,1:180], data_train[,181:182], size=3, learnFuncParams=c(0.1), 
+              maxit=50, inputsTest=data_test[,1:180], targetsTest=data_test[,181:182])
+model_results <- predict(mlp3,data_test[,1:180])
+idx <- apply(model_results, 1, maxidx)
+prediction <- c('SB', 'NB')[idx]
+res <- table(prediction, peptidos$label[-train_ind])
+(cmatrix <- caret::confusionMatrix(res,positive="SB"))
+```
+```{r}
+# model <- train(data_train[,1:180], as.factor(peptidos$label[train_ind]), method='mlp', 
+#                trControl= trainControl(method='cv', number=5), 
+#                tuneGrid= NULL, tuneLength=10 ,trace = FALSE)
+# 
+# plotnet(model, alpha=0.6)
+# summary(model)
+# prediction <- predict(model, test.set[-10])                           # predict
+# table(prediction, test.set$Class)  
+```
+
+# Clasificador de SVN
+
+## Preparación de datos  
+
+Para SVN vamos a utilizar como resultado la variable `label` original, sin necesidad de convertirla a un valor numérico como hicimos para la red neuronal.
+
+
+```{r}
+set.seed(params$seed.split)
+data_svn <- oh_data[,1:180]
+data_svn$label <- as.factor(peptidos$label)
+smp_size <-  floor(n * params$training_split/100)
+train_ind <- sample(seq_len(n), size = smp_size)
+data_train <- data_svn[train_ind,]
+data_test <- data_svn[-train_ind,]
+```
+
+
+```{r}
+set.seed(params$seed.clsfier)
+(modeloLineal <- ksvm(label~.,data=data_train, kernel='vanilladot'))
+
+modLineal_pred <- predict(modeloLineal, data_test)
+
+res <- table(modLineal_pred, data_test$label)
+(cmatrix1 <- caret::confusionMatrix(res, positive="SB"))
+```
+```{r}
+set.seed(params$seed.clsfier)
+(modeloGauss <- ksvm(label~.,data=data_train, kernel='rbfdot'))
+
+modGauss_pred <- predict(modeloGauss, data_test)
+
+res <- table(modGauss_pred, data_test$label)
+(cmatrix1 <- caret::confusionMatrix(res, positive="SB"))
 ```
