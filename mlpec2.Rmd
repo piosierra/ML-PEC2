@@ -46,9 +46,12 @@ if(!(require(e1071)))
 **Parámetros:**  
 **data_file**: *ruta completa al archivo de péptidos*  
 **training_splt**: *porcentaje a dedicar al conjunto de training [0,100]*
+**transformed_file**: *archivo en el que almacenar lod datos transformados con la codificación one-hot.*
 *** 
 
-# Algoritmo Red Neuronal Artificial
+# 1- Algoritmos utilizados
+
+## Algoritmo Red Neuronal Artificial
 
 El algoritmo de Red Neuronal Artificial con retropropagación está inspirado en el funcionamiento de las redes neuronales biológicas, pero con un menor número de neuronas y capas. Funciona iterando repetidamente dos procesos. En uno se obtiene una salida y en otro se propaga el error de esa salida hacia atrás para corregir los pesos de de cada neurona, mediante la técnica de gradiente descendente.
 
@@ -58,7 +61,7 @@ Se puede adaptar a problemas de clasificación o predicción numéricos  | Muy c
 Capaz de modelizar estructuras más complejas que la mayoría de algoritmos | Es fácil caer en problemas de overfitting con esta técnica.  
 Hace pocas presunciones sobre las relaciones internas de los datos | El resultado en un modelo de caja negra que es muy difícil, si no imposible, de interpretar. 
 
-# Algoritmo Support Vector Machine
+## Algoritmo Support Vector Machine
 
 El algoritmo SVN consiste en la creacción de hiperplanos en el espacio definido por los valores de las características que creen particiones en las que clasificar los datos.  
 
@@ -73,7 +76,7 @@ El algoritmo consiste en identificar los Support Vectors, las observaciones de c
 
 Otra ventaja de SVN es la posiblidad de añadir más dimensiones a las observaciones para así hacer visibles (lineales) relaciones entre las observaciones.  
 
-# Lectura de datos
+# 2 - Lectura de datos
 
 ```{r}
 peptidos <- read.csv2(params$data_file)
@@ -86,8 +89,9 @@ Tenemos un `r 100*sum(peptidos$label=="SB")/length(peptidos$label)`% de peptidos
 
 Podemos observar que los péptidos que tienen interacción presentan una mayor frecuencia muy marcada de aminoácidos hidrófobos en la segunda y última posición de la cadena.  
 
-# Codificación "one-hot"
+# 3 - Función de codificación "one-hot"
 
+Implementamos una función que cree la codificación "one-hot" a partir de una cadena de aminoácidos.   
 ```{r}
 aminoacidos <-c('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L',
                 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y')
@@ -96,13 +100,32 @@ one_hot <- function(data) {
                   function(x) {as.integer(aminoacidos == x)}), 
            recursive = FALSE)
 }
-oh_data <- data.frame(t(data.frame(lapply(peptidos$sequence, one_hot))))
-rownames(oh_data) <- peptidos$sequence  
 ```
 
-# Clasificador de red neuronal artificial
+# 4 - Transformación de los datos
 
-## Preparación de datos  
+Aplicamos ahora esa función a la lista de aminoácidos de la entrada para obtener los datos que vamos a utilizar.  
+```{r}
+oh_data <- data.frame(t(data.frame(lapply(peptidos$sequence, one_hot))))
+```
+Comprobamos que la transformación deja correctamente `r nchar(peptidos[1,1])` unos en cada fila. Y guardamos los datos.
+```{r}
+summary(apply(oh_data,1,sum))
+write.csv2(oh_data, params$transformed_file)
+# rownames(oh_data) <- peptidos$sequence  
+```
+
+
+# 5 - Clasificador de red neuronal artificial
+
+## a) Lectura de los datos
+
+Leemos los datos del archivo `r params$transformed_file`. 
+```{r}
+oh_data <- read.csv2(params$transformed_file)
+```
+
+## b) Preparación de datos  
 
 Creamos variables binarias en lugar de usar la variable factor `label`.   
 ```{r}
@@ -120,11 +143,15 @@ data_train <- oh_data[train_ind,]
 data_test <- oh_data[-train_ind,]
 ```
 
-## Entrenamiendo de modelo de 1 nodo y de modelo de 3 nodos
+## c,d) Entrenamiendo y predicción de modelo RNA de 1 nodo y de modelo RNA de 3 nodos
 
+Primero creamos la fórmula a partir de los nombres de las columnas.
 ```{r}
 xnam <- names(oh_data[1:180])
 fmla <- as.formula(paste("SB+NB ~ ", paste(xnam, collapse= "+")))
+```
+Creamos los modelos reseteando la semilla antes de cada uno al valor `params$seed.clsfier`.  
+```{r}
 set.seed(params$seed.clsfier)
 data_model_1 <- neuralnet(fmla,
                           data = data_train,
@@ -133,6 +160,12 @@ set.seed(params$seed.clsfier)
 data_model_3 <- neuralnet(fmla,
                           data = data_train,
                           hidden=3,linear.output=FALSE)
+
+```
+
+Mostramos las redes resultantes de cada modelo.  
+
+```{r}
 plot(data_model_1, rep='best')
 plot(data_model_3, rep='best')
 
@@ -156,6 +189,11 @@ prediction3 <- c('SB', 'NB')[idx3]
 res1 <- table(prediction1, peptidos$label[-train_ind] )
 res3 <- table(prediction3, peptidos$label[-train_ind] )
 
+```
+
+## e) Resultados de la clasificación.
+
+```{r}
 (cmatrix1 <- caret::confusionMatrix(res1,positive="SB"))
 (cmatrix3 <- caret::confusionMatrix(res3,positive="SB"))
 ```
@@ -164,33 +202,35 @@ El modelo de una capa con categoria positiva 'SB' obtiene una precisión de `r r
 El modelo de tres capas con categoria positiva 'SB' obtiene una precisión de `r round(cmatrix3$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix3$byClass["Sensitivity"], 3)` y `r round(cmatrix3$byClass["Specificity"], 3)` respectivamente.  
 `r if(cmatrix1$overall["Accuracy"] > cmatrix3$overall["Accuracy"]){"Vemos que el modelo obtenido con un solo nodo tiene una mayor precisión"}``r if(cmatrix1$overall["Accuracy"] < cmatrix3$overall["Accuracy"]){"Vemos que el modelo obtenido con tres nodos tiene una mayor precisión"}``r if(cmatrix1$overall["Accuracy"] == cmatrix3$overall["Accuracy"]){"Vemos que ambos modelos tienen la misma precisión"}`
 
-```{r}
+## f) Modelo `mlp` de 3 nodos con 5-fold crossvalidation.
 
-# mlp3 <- mlp(data_train[,1:180], data_train[,181:182], size=3, learnFuncParams=c(0.1), 
-#               maxit=50, inputsTest=data_test[,1:180], targetsTest=data_test[,181:182])
-# model_results <- predict(mlp3,data_test[,1:180])
-# idx <- apply(model_results, 1, maxidx)
-# prediction <- c('SB', 'NB')[idx]
-# res <- table(prediction, peptidos$label[-train_ind])
-# (cmatrix <- caret::confusionMatrix(res,positive="SB"))
-```
+Ahora utilizamos el paquete `caret` para entrenar un modelo Multi-Layer Perceptron. Para detallar que es de tres nodos tenemos que incluir un data.frame en la variable `tuneGrid` de `train` con los parámetros necesarios para el modelo, en este caso `size`, como columnas con el nombre del parámetro empezando por ".".  
+
 ```{r}
 set.seed(params$seed.clsfier)
 data.frame(.size=3)
-model <- caret::train(data_train[,1:180], as.factor(peptidos$label[train_ind]), method='mlpWeightDecay', 
+model <- caret::train(data_train[,1:180], as.factor(peptidos$label[train_ind]), method='mlp', 
                trControl= trainControl(method='cv', number=5), 
                tuneGrid= data.frame(.size=3), tuneLength=10 ,trace = FALSE)
 prediction <- predict(model, data_test) 
 res <- table(prediction, peptidos$label[-train_ind] )
-(cmatrix <- caret::confusionMatrix(res,positive="SB"))
+(cmatrix_mlp <- caret::confusionMatrix(res,positive="SB"))
 ```
 
-# Clasificador de SVN
+El modelo `mlp` de tres capas con categoria positiva 'SB' usando 5-fold crossvalidation obtiene una precisión de `r round(cmatrix_mlp$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix_mlp$byClass["Sensitivity"], 3)` y `r round(cmatrix_mlp$byClass["Specificity"], 3)` respectivamente.  
 
-## Preparación de datos  
+# 6 - Implementación de un clasificador de SVN
 
-Para SVN vamos a utilizar como resultado la variable `label` original, sin necesidad de convertirla a un valor numérico como hicimos para la red neuronal.
+## a) Preparación de datos  
 
+Leemos los datos del archivo `r params$transformed_file`.   
+```{r}
+oh_data <- read.csv2(params$transformed_file)
+```
+
+## b) Preparación de datos  
+
+Para SVN vamos a utilizar como resultado la variable `label` original, sin necesidad de convertirla a un valor numérico como hicimos para la red neuronal.  
 
 ```{r}
 set.seed(params$seed.split)
@@ -201,30 +241,46 @@ train_ind <- sample(seq_len(n), size = smp_size)
 data_train <- data_svn[train_ind,]
 data_test <- data_svn[-train_ind,]
 ```
+## c,d) Entrenamiendo y predicción de modelos SVN lineal y RBF  
 
+Creamos los modelos reseteando la semilla antes de cada uno al valor `params$seed.clsfier`.  
 
 ```{r}
+# Modelo lineal
 set.seed(params$seed.clsfier)
 (modeloLineal <- ksvm(label~.,data=data_train, kernel='vanilladot'))
-
 modLineal_pred <- predict(modeloLineal, data_test)
-
-res <- table(modLineal_pred, data_test$label)
-(cmatrix1 <- caret::confusionMatrix(res, positive="SB"))
-```
-```{r}
+res_lineal <- table(modLineal_pred, data_test$label)
+# Modelo RBF
 set.seed(params$seed.clsfier)
 (modeloGauss <- ksvm(label~.,data=data_train, kernel='rbfdot'))
-
 modGauss_pred <- predict(modeloGauss, data_test)
+res_rbf <- table(modGauss_pred, data_test$label)
 
-res <- table(modGauss_pred, data_test$label)
-(cmatrix1 <- caret::confusionMatrix(res, positive="SB"))
 ```
 
+
+## e) Resultados de la clasificación.
+
 ```{r}
-# svmGrid <- expand.grid(sigma= 2^c(-25, -20, -15,-10, -5, 0), C= 2^c(0:5))
-svmGrid <- expand.grid(sigma= 2^c(-10), C= 2^c(0))
+(cmatrix_lineal <- caret::confusionMatrix(res_lineal, positive="SB"))
+(cmatrix_rbf <- caret::confusionMatrix(res_rbf, positive="SB"))
+```
+
+El modelo SVN lineal con categoría positiva 'SB' obtiene una precisión de `r round(cmatrix_lineal$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix_lineal$byClass["Sensitivity"], 3)` y `r round(cmatrix_lineal$byClass["Specificity"], 3)` respectivamente.  
+
+El modelo SVN RBF con categoría positiva 'SB' obtiene una precisión de `r round(cmatrix_rbf$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix_rbf$byClass["Sensitivity"], 3)` y `r round(cmatrix_rbf$byClass["Specificity"], 3)` respectivamente.  
+
+`r if(cmatrix_lineal$overall["Accuracy"] > cmatrix_rbf$overall["Accuracy"]){"Vemos que el modelo SVN lineal tiene una mayor precisión"}``r if(cmatrix_lineal$overall["Accuracy"] < cmatrix_rbf$overall["Accuracy"]){"Vemos que el modelo SVN RBF tiene una mayor precisión"}``r if(cmatrix_lineal$overall["Accuracy"] == cmatrix_rbf$overall["Accuracy"]){"Vemos que ambos modelos tienen la misma precisión"}`
+
+## f) Modelo SVN RBF del paquete `caret` con 5-fold crossvalidation.
+
+Ahora utilizamos el paquete `caret` para entrenar un modelo SVN con el método `svmRadial`. Para detallar que es de tres nodos tenemos que incluir un data.frame en la variable `tuneGrid` de `train` con los parámetros necesarios para el modelo, en este caso `sigma` y `C`, como columnas con el nombre del parámetro empezando por ".".  
+En este caso optamos por probar con varias combinaciones de los parámetros y escoger la mejor en función de la precisión.  
+
+
+```{r}
+svmGrid <- expand.grid(sigma= 2^c(-10,-8), C= 2^c(0,1))
 set.seed(params$seed.clsfier)
 model <- caret::train(label~., data= data_train, method='svmRadial', 
                trControl= trainControl(method='cv', number=5, classProbs = TRUE), 
@@ -236,4 +292,4 @@ res <- table(prediction, data_test$label)                             # compare
 caret::confusionMatrix(res, positive="SB")  
 
 ```
-
+El modelo `mlp` de tres capas con categoria positiva 'SB' usando 5-fold crossvalidation obtiene una precisión de `r round(cmatrix_mlp$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix_mlp$byClass["Sensitivity"], 3)` y `r round(cmatrix_mlp$byClass["Specificity"], 3)` respectivamente.  
