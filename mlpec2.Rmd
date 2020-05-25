@@ -18,6 +18,7 @@ params:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, fig.height=3.5) 
 ```
 
 ```{r include = FALSE}
@@ -45,12 +46,13 @@ if(!(require(e1071)))
 
 ***   
 
-**Parámetros:**  
+**Parámetros modificables en Knit:**  
 **data_file**: *ruta completa al archivo de péptidos*  
 **training_splt**: *porcentaje a dedicar al conjunto de training [0,100]*  
 **seed.split**: *semilla para la división de los datos en conjunto y entrenamiento.*  
 **seed.clsfier**: *semilla para la ejecución de cada modelo.*  
-**transformed_file**: *archivo en el que almacenar lod datos transformados con la codificación one-hot.*      
+**transformed_file**: *archivo en el que almacenar lod datos transformados con la codificación one-hot.*  
+
 ***  
 
 # 1- Algoritmos utilizados
@@ -82,20 +84,28 @@ Otra ventaja de SVN es la posiblidad de añadir más dimensiones a las observaci
 
 # 2 - Lectura de datos
 
+Leemos los datos del archivo con los péptidos.  
 ```{r}
 peptidos <- read.csv2(params$data_file)
+```
+Comprobamos la relación entre péptidos de uno y otro tipo.  
+```{r}
 table(peptidos$label)
+```
+Tenemos un `r 100*sum(peptidos$label=="SB")/length(peptidos$label)`% de peptidos con interacción.   
+
+Mostramos la composición de aminoácidos para cada tipo de péptido.  
+
+```{r}
 ggseqlogo(peptidos[which(peptidos$label=="SB"),]$sequence)
 ggseqlogo(peptidos[which(peptidos$label=="NB"),]$sequence)
 ```
-
-Tenemos un `r 100*sum(peptidos$label=="SB")/length(peptidos$label)`% de peptidos con interacción.  
 
 Podemos observar que los péptidos que tienen interacción presentan una mayor frecuencia muy marcada de aminoácidos hidrófobos en la segunda y última posición de la cadena.  
 
 # 3 - Función de codificación "one-hot"
 
-Implementamos una función que cree la codificación "one-hot" a partir de una cadena de aminoácidos.   
+Implementamos una función que cree la codificación "one-hot" a partir de una cadena de aminoácidos. Basta con tomar los ceros y unos de hacer una comparación directa con una cadena de todos los aminoácidos.    
 ```{r}
 aminoacidos <-c('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L',
                 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y')
@@ -135,7 +145,7 @@ Comprobamos de nuevo que la transformación deja correctamente `r nchar(peptidos
 summary(apply(oh_data,1,sum))
 ```
 
-`r if(sum(complete.cases(oh_data)) == nrow(oh_data)){"Comprobamos que no hay obervaciones con datos faltantes."}``r if(sum(complete.cases(oh_data)) != nrow(oh_data)){paste("El archivo de datos tiene",nrow(oh_data)- sum(complete.cases(oh_data)), "observaciones a en las que faltan datos", sep=" ")}`
+`r if(sum(complete.cases(oh_data)) == nrow(oh_data)){"Comprobamos que no hay observaciones con datos faltantes."}``r if(sum(complete.cases(oh_data)) != nrow(oh_data)){paste("El archivo de datos tiene",nrow(oh_data)- sum(complete.cases(oh_data)), "observaciones en las que faltan datos", sep=" ")}`
 
 Creamos variables binarias en lugar de usar la variable factor `label`. Almacenamos en una variable `n` el número de observaciones.
 ```{r}
@@ -162,10 +172,13 @@ fmla <- as.formula(paste("SB+NB ~ ", paste(xnam, collapse= "+")))
 ```
 Creamos los modelos reseteando la semilla antes de cada uno al valor `params$seed.clsfier`.  
 ```{r}
+# Modelo RNA con 1 nodo
 set.seed(params$seed.clsfier)
 data_model_1 <- neuralnet(fmla,
                           data = data_train,
                           hidden=1,linear.output=FALSE)
+
+# Modelo RNA con 3 nodos
 set.seed(params$seed.clsfier)
 data_model_3 <- neuralnet(fmla,
                           data = data_train,
@@ -246,7 +259,7 @@ Comprobamos de nuevo que la transformación deja correctamente `r nchar(peptidos
 summary(apply(oh_data,1,sum))
 ```
 
-`r if(sum(complete.cases(oh_data)) == nrow(oh_data)){"Comprobamos que no hay obervaciones con datos faltantes."}``r if(sum(complete.cases(oh_data)) != nrow(oh_data)){paste("El archivo de datos tiene",nrow(oh_data)- sum(complete.cases(oh_data)), "observaciones a en las que faltan datos", sep=" ")}`
+`r if(sum(complete.cases(oh_data)) == nrow(oh_data)){"Comprobamos que no hay observaciones con datos faltantes."}``r if(sum(complete.cases(oh_data)) != nrow(oh_data)){paste("El archivo de datos tiene",nrow(oh_data)- sum(complete.cases(oh_data)), "observaciones en las que faltan datos", sep=" ")}`
 
 Para SVN vamos a utilizar como resultado la variable `label` original, sin necesidad de convertirla a un valor numérico como hicimos para la red neuronal.  
 
@@ -310,7 +323,7 @@ model
 prediction <- predict(model, data_test)                
 res <- table(prediction, data_test$label)                      
 
-caret::confusionMatrix(res, positive="SB")  
+(cmatrix_rbf5f <- caret::confusionMatrix(res, positive="SB"))
 
 ```
 El modelo `mlp` de tres capas con categoria positiva 'SB' usando 5-fold crossvalidation obtiene una precisión de `r round(cmatrix_mlp$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix_mlp$byClass["Sensitivity"], 3)` y `r round(cmatrix_mlp$byClass["Specificity"], 3)` respectivamente.  
@@ -324,5 +337,13 @@ http://www.r-tutor.com/gpu-computing/rpud-installation
 De forma genérica diría que para este caso se pueden obtener buenos resultados con los dos tipos de algoritmos, aunque por el tipo de problema yo me decantaría por SVN para explorar posibles optimizaciones.
 
 
+Modelo | Accuracy | Kappa
+--------|----------|------
+Red Neuronal de 1 nodo | `r cmatrix1$overall[1]` | `r cmatrix1$overall[2]` 
+Red Neuronal de 3 nodos | `r cmatrix3$overall[1]` | `r cmatrix3$overall[2]`
+Multi-Layer Perceptron de 3 nodos | `r cmatrix_mlp$overall[1]` | `r cmatrix_mlp$overall[2]`
+SVN Lineal | `r cmatrix_lineal$overall[1]` | `r cmatrix_lineal$overall[2]`
+SVN RBF | `r cmatrix_rbf$overall[1]` | `r cmatrix_rbf$overall[2]`
+SVN RBF con 5-fold cv. | `r cmatrix_rbf5f$overall[1]` | `r cmatrix_rbf5f$overall[2]`
 
 
