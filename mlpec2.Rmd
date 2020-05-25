@@ -52,8 +52,12 @@ if(!(require(e1071)))
 **seed.split**: *semilla para la división de los datos en conjunto y entrenamiento.*  
 **seed.clsfier**: *semilla para la ejecución de cada modelo.*  
 **transformed_file**: *archivo en el que almacenar lod datos transformados con la codificación one-hot.*  
+<<<<<<< HEAD
 
 ***  
+=======
+*** 
+>>>>>>> bde93e536ad0a8c00af1d82b566213a99ddf7263
 
 # 1- Algoritmos utilizados
 
@@ -126,6 +130,10 @@ Comprobamos que la transformación deja correctamente `r nchar(peptidos[1,1])` u
 ```{r}
 summary(apply(oh_data,1,sum))
 write.table(oh_data, params$transformed_file, row.names = FALSE, sep = ";")
+<<<<<<< HEAD
+=======
+# rownames(oh_data) <- peptidos$sequence  
+>>>>>>> bde93e536ad0a8c00af1d82b566213a99ddf7263
 ```
 
 
@@ -328,7 +336,11 @@ res <- table(prediction, data_test$label)
 ```
 El modelo `mlp` de tres capas con categoria positiva 'SB' usando 5-fold crossvalidation obtiene una precisión de `r round(cmatrix_mlp$overall["Accuracy"], 3)` y una sensitividad y especificidad de `r round(cmatrix_mlp$byClass["Sensitivity"], 3)` y `r round(cmatrix_mlp$byClass["Specificity"], 3)` respectivamente.  
 
+<<<<<<< HEAD
 # 7 - Comentario sobre los resultados.
+=======
+## 7 - Comentario sobre los resultados.
+>>>>>>> bde93e536ad0a8c00af1d82b566213a99ddf7263
 
 Los resultados son bastante similares entre sí. Está claro que es bastante fácil conseguir una precisión alta en este caso. Me ha parecido muy interesante el sistema de validación automática de varios parámetros que he utilizado en el último caso.
 Sin embargo consume mucho tiempo el probar varias combinaciones. Quise probar a hacerlo con el paquete `rpud`, pero por desgracia aún no está disponible para R 4.0.0.  
@@ -337,6 +349,7 @@ http://www.r-tutor.com/gpu-computing/rpud-installation
 De forma genérica diría que para este caso se pueden obtener buenos resultados con los dos tipos de algoritmos, aunque por el tipo de problema yo me decantaría por SVN para explorar posibles optimizaciones.
 
 
+<<<<<<< HEAD
 Modelo | Accuracy | Kappa
 --------|----------|------
 Red Neuronal de 1 nodo | `r cmatrix1$overall[1]` | `r cmatrix1$overall[2]` 
@@ -345,5 +358,7 @@ Multi-Layer Perceptron de 3 nodos | `r cmatrix_mlp$overall[1]` | `r cmatrix_mlp$
 SVN Lineal | `r cmatrix_lineal$overall[1]` | `r cmatrix_lineal$overall[2]`
 SVN RBF | `r cmatrix_rbf$overall[1]` | `r cmatrix_rbf$overall[2]`
 SVN RBF con 5-fold cv. | `r cmatrix_rbf5f$overall[1]` | `r cmatrix_rbf5f$overall[2]`
+=======
+>>>>>>> bde93e536ad0a8c00af1d82b566213a99ddf7263
 
 
