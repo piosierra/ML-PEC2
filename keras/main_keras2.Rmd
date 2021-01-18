@@ -1,0 +1,192 @@
+---
+title: Clasificación de imagenes de radiografias de tórax entre normales y con derrame
+  utilizando Keras
+author: "Pío Sierra"
+date: "4/5/2020"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  pdf_document:
+    toc: yes
+params:
+  data_file_in: RX_Torax_4097.csv
+  effusion_folder: ../../pec1/solucion/dataset/effusion
+  normal_folder: ../../pec1/solucion/dataset/normal
+  size: 32
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+if(!(require(tensorflow)))
+  install.packages("tensorflow")
+if(!(require(keras)))
+  install.packages("keras")
+if(!(require(OpenImageR)))
+  install.packages("OpenImageR")
+if(!(require(class)))
+  install.packages("class")
+if(!(require(gmodels)))
+  install.packages("gmodels")
+if(!(require(ROCR)))
+  install.packages("ROCR")
+if(!(require(caret)))
+  install.packages("caret")
+if(!(require(e1071)))
+  install.packages("e1071")
+if(!(require(abind)))
+  install.packages("abind")
+```
+# El paquete Keras
+
+Keras es un API de alto nivel para la creacción de redes neuronales que permite un rápido prototipado de las mismas.  
+Entre sus principales ventajas nos encontramos con:  
+
+* Capacidad para trabajar sobre varios backend distintos, incluyendo TensorFlow, CNTK o Theano.  
+* Soporte para cualquier tipo de arquitectura de la red neuronal.  
+* Soporte específico para redes convolucionales.  
+* Capacidad para utilizar tanto CPUs como GPUs.  
+
+Por todos estos motivos lo hemos elegido para implementar una CNN que clasifique las imágenes con las que trabajamos en la PEC1.  
+
+# Lectura de datos
+
+Los archivos de las imágenes tienen que estar situados en dos carpetas que se indican en forma de parámetros. Una incluirá todas las imágenes de pacientes normales y otra las imágenes de aquellos que tienen derrame. Las imágenes pertenecen al conjunto del NIH Clinical Center.   
+Las imágenes originales se pueden conseguir en:  
+https://nihcc.app.box.com/v/ChestXray-NIHCC  
+
+Keras está pensado para trabajar con imágenes, por lo que no necesitamos de ninguna transformación particular de los datos, aunque sí reducimos el tamaño de las mismas para acelerar el proceso y consumir menos recursos. El tamaño (en pixels de lado del cuadrado) de las imágenes también se puede definir en los parámetros, por lo que es posible hacer el análisis en distintas configuraciones.
+
+```{r}
+# Leemos las carpetas de los datos
+lista_normal <- list.files(params$normal_folder)
+lista_effusion <- list.files(params$effusion_folder)
+
+# Función para rescalar las imágenes.
+get.image <- function(i) {
+  resizeImage(readImage(i), params$size, params$size, method = "bilinear")
+}
+
+# Leemos los datos de ambos conjuntos.
+dir <- getwd()
+setwd(params$normal_folder)
+data_normal <- lapply(lista_normal, get.image)
+data_normal <- abind(data_normal, along = 0)
+
+setwd(dir)
+setwd(params$effusion_folder)
+data_effusion <- lapply(lista_effusion, get.image)
+data_effusion <- abind(data_effusion, along = 0)
+
+# Unimos ambos conjuntos de datos y los enriquecemos con una nueva columna con 
+# el valor que las califica como de uno u otro tipo.
+data <- abind(data_normal,data_effusion, along = 1)
+type <- c(rep(0,length(lista_normal)), rep(1,length(lista_effusion)))
+data <- list(x=data,y=as.integer(type))
+
+```
+
+# Preparación de los datos.  
+
+El siguiente paso es crear los conjuntos de entrenamiento y prueba. Tomamos 1/3 de las imágenes para prueba y el resto para entrenamiento.
+
+```{r}
+
+set.seed(12345)
+smp_size <-  (length(lista_effusion) + length(lista_normal)) -
+  trunc((length(lista_effusion) + length(lista_normal)) / 3)
+train_ind <-
+  sample(seq_len(length(lista_effusion) + length(lista_normal)), size = smp_size)
+
+data_train <- list(x = data$x[train_ind, , , ], y = data$y[train_ind])
+data_test <- list(x = data$x[-train_ind, , , ], y = data$y[-train_ind])
+
+```
+
+# Definición del modelo.  
+
+Ahora definimos el modelo. Esta es la parte más delicada y que requiere bastante proceso de prueba y conocimiento experto para dar con la "receta" correcta.  
+Lo que hacemos es añadir secuencialmente distintas capas, algunas de convolución y otras de pooling para reducir la dimensionalidad, hasta finalmente "aplanar" el modelo y obtener una salida de [0,1] que comparar con nuestra clasificación. 
+Simplemente a modo ilustrativo he dejado comentado en el código algunas de las opciones que he explorado también para optimizar la CNN.
+
+```{r}
+
+model <- keras_model_sequential() %>%
+  layer_conv_2d(
+    filters = 32,
+    kernel_size = c(3, 3),
+    padding = "same",
+    activation = "relu",
+    input_shape = c(params$size, params$size, 3)
+  ) %>%
+  layer_conv_2d(
+    filters = 16,
+    kernel_size = c(3, 3),
+    padding = "same",
+    activation = "relu"
+  ) %>%
+  layer_activation_leaky_relu(0.5) %>%
+  layer_batch_normalization() %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_dropout(0.25) %>%
+  layer_conv_2d(filters = 64,
+                kernel_size = c(3, 3),
+                activation = "relu") %>%
+  layer_conv_2d(filters = 64,
+                kernel_size = c(3, 3),
+                activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  # layer_conv_2d(filters = 128, kernel_size = c(3,3), activation = "relu") %>%
+  # layer_conv_2d(filters = 128, kernel_size = c(3,3), activation = "relu") %>%
+  # layer_max_pooling_2d(pool_size = c(2,2)) %>%
+  # layer_conv_2d(filters = 256, kernel_size = c(3,3), activation = "relu") %>%
+  # layer_conv_2d(filters = 256, kernel_size = c(3,3), activation = "relu") %>%
+  # layer_max_pooling_2d(pool_size = c(2,2)) %>%
+  layer_flatten() %>%
+  # layer_dense(units = 256, activation = "relu") %>%
+  # layer_dropout(rate = 0.2) %>%
+  layer_dense(units = 100, activation = "relu") %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+summary(model)
+
+```
+A la hora de compilar el modelo es importante en este caso (variable categórica 0,1) que pongamos como loss una opción que acepte esos valores, en este caso `binary_crossentropy`.
+
+```{r}
+model %>% compile(
+  optimizer = optimizer_rmsprop(lr = 0.0001, decay = 1e-6),
+  loss = "binary_crossentropy",
+  metrics = "accuracy"
+)
+
+```
+Finalmente corremos el modelo con los datos y evaluamos su rendimiento. Aquí utilizamos la función `callback_early_stopping` durante el proceso de mejora para para evitar que se produzca overfitting. 
+
+```{r}
+history <- model %>% 
+  fit(
+    x = data_train$x, y = data_train$y,
+    epochs = 10,
+    validation_data = unname(data_test),
+    verbose = 2,
+   # callback_early_stopping( monitor="val_accuracy", min_delta = 0.1, patience = 4)
+  )
+
+plot(history)
+
+evaluate(model, data_test$x, data_test$y, verbose = 0)
+
+```
+
+He probado con diferentes modelos pero en general no he conseguido `val_accuracy > 71%`.  
+
+Por último vemos la matriz de confusión para evaluar el resultado.  
+```{r}
+
+confusionMatrix(as.factor(model %>% predict_classes(data_test$x)), as.factor(data_test$y), "1")
+```
